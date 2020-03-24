@@ -79,7 +79,8 @@ Django's system checks are organized using the following tags:
 * ``database``: Checks database-related configuration issues. Database checks
   are not run by default because they do more than static code analysis as
   regular checks do. They are only run by the :djadmin:`migrate` command or if
-  you specify the ``database`` tag when calling the :djadmin:`check` command.
+  you specify configured database aliases using the ``--database`` option when
+  calling the :djadmin:`check` command.
 * ``models``: Checks of model, field, and manager definitions.
 * ``security``: Checks security related configuration.
 * ``signals``: Checks on signal declarations and handler registrations.
@@ -89,6 +90,11 @@ Django's system checks are organized using the following tags:
 * ``urls``: Checks URL configuration.
 
 Some checks may be registered with multiple tags.
+
+.. versionchanged:: 3.1
+
+    The ``database`` checks are now run only for database aliases specified
+    using the :option:`check --database` option.
 
 Core system checks
 ==================
@@ -115,15 +121,18 @@ configured:
 Database
 --------
 
-MySQL
-~~~~~
+MySQL and MariaDB
+~~~~~~~~~~~~~~~~~
 
-If you're using MySQL, the following checks will be performed:
+If you're using MySQL or MariaDB, the following checks will be performed:
 
-* **mysql.E001**: MySQL does not allow unique ``CharField``\s to have a
-  ``max_length`` > 255.
-* **mysql.W002**: MySQL Strict Mode is not set for database connection
+* **mysql.E001**: MySQL/MariaDB does not allow unique ``CharField``\s to have a
+  ``max_length`` > 255. *This check was changed to* ``mysql.W003`` *in Django
+  3.1 as the real maximum size depends on many factors.*
+* **mysql.W002**: MySQL/MariaDB Strict Mode is not set for database connection
   '<alias>'. See also :ref:`mysql-sql-mode`.
+* **mysql.W003**: MySQL/MariaDB may not allow unique ``CharField``\s to have a
+  ``max_length`` > 255.
 
 Model fields
 ------------
@@ -213,9 +222,8 @@ Related fields
 * **fields.E309**: Reverse query name ``<related query name>`` must not contain
   ``'__'``.
 * **fields.E310**: No subset of the fields ``<field1>``, ``<field2>``, ... on
-  model ``<model>`` is unique. Add ``unique=True`` on any of those fields or
-  add at least a subset of them to a unique_together constraint.
-* **fields.E311**: ``<model>`` must set ``unique=True`` because it is
+  model ``<model>`` is unique.
+* **fields.E311**: ``<model>.<field name>`` must be unique because it is
   referenced by a ``ForeignKey``.
 * **fields.E312**: The ``to_field`` ``<field name>`` doesn't exist on the
   related model ``<app label>.<model>``.
@@ -255,6 +263,8 @@ Related fields
   effect as using a ``OneToOneField``.
 * **fields.W343**: ``limit_choices_to`` has no effect on ``ManyToManyField``
   with a ``through`` model.
+* **fields.W344**: The field's intermediary table ``<table name>`` clashes with
+  the table name of ``<model>``/``<model>.<field name>``.
 
 Models
 ------
