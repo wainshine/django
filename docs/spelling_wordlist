@@ -6,6 +6,7 @@ admin
 admindocs
 admins
 affine
+affordances
 aggregator
 Ai
 Alchin
@@ -144,7 +145,6 @@ databrowse
 datafile
 dataset
 datasets
-datastores
 datatype
 datetimes
 Debian
@@ -324,6 +324,7 @@ Koziarski
 kwarg
 kwargs
 Kyngesburye
+Kyrgyz
 latin
 lawrence
 lexer
@@ -447,6 +448,7 @@ permalink
 pessimization
 Peucker
 pgAdmin
+PgBouncer
 PGRaster
 phishing
 php
@@ -724,7 +726,6 @@ ungrouped
 unhandled
 unharmful
 unhashable
-unicode
 uninstall
 uninstalling
 unioning
