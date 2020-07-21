@@ -6,7 +6,7 @@ from itertools import chain
 from django.core.exceptions import EmptyResultSet, FieldError
 from django.db import DatabaseError, NotSupportedError
 from django.db.models.constants import LOOKUP_SEP
-from django.db.models.expressions import OrderBy, Random, RawSQL, Ref, Value
+from django.db.models.expressions import F, OrderBy, Random, RawSQL, Ref, Value
 from django.db.models.functions import Cast
 from django.db.models.query_utils import Q, select_related_descend
 from django.db.models.sql.constants import (
@@ -361,13 +361,16 @@ class SQLCompiler:
             resolved = expr.resolve_expression(self.query, allow_joins=True, reuse=None)
             if self.query.combinator:
                 src = resolved.get_source_expressions()[0]
+                expr_src = expr.get_source_expressions()[0]
                 # Relabel order by columns to raw numbers if this is a combined
                 # query; necessary since the columns can't be referenced by the
                 # fully qualified name and the simple column names may collide.
                 for idx, (sel_expr, _, col_alias) in enumerate(self.select):
                     if is_ref and col_alias == src.refs:
                         src = src.source
-                    elif col_alias:
+                    elif col_alias and not (
+                        isinstance(expr_src, F) and col_alias == expr_src.name
+                    ):
                         continue
                     if src == sel_expr:
                         resolved.set_source_expressions([RawSQL('%d' % (idx + 1), ())])
@@ -724,7 +727,12 @@ class SQLCompiler:
         # If we get to this point and the field is a relation to another model,
         # append the default ordering for that model unless it is the pk
         # shortcut or the attribute name of the field that is specified.
-        if field.is_relation and opts.ordering and getattr(field, 'attname', None) != name and name != 'pk':
+        if (
+            field.is_relation and
+            opts.ordering and
+            getattr(field, 'attname', None) != pieces[-1] and
+            name != 'pk'
+        ):
             # Firstly, avoid infinite loops.
             already_seen = already_seen or set()
             join_tuple = tuple(getattr(self.query.alias_map[j], 'join_cols', None) for j in joins)
