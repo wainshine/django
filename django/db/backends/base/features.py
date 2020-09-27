@@ -295,6 +295,26 @@ class BaseDatabaseFeatures:
     has_native_json_field = False
     # Does the backend use PostgreSQL-style JSON operators like '->'?
     has_json_operators = False
+    # Does the backend support __contains and __contained_by lookups for
+    # a JSONField?
+    supports_json_field_contains = True
+    # Does value__d__contains={'f': 'g'} (without a list around the dict) match
+    # {'d': [{'f': 'g'}]}?
+    json_key_contains_list_matching_requires_list = False
+
+    # Does the backend support column collations?
+    supports_collation_on_charfield = True
+    supports_collation_on_textfield = True
+    # Does the backend support non-deterministic collations?
+    supports_non_deterministic_collations = True
+
+    # Collation names for use by the Django test suite.
+    test_collations = {
+        'ci': None,  # Case-insensitive.
+        'cs': None,  # Case-sensitive.
+        'non_default': None,  # Non-default.
+        'swedish_ci': None  # Swedish case-insensitive.
+    }
 
     def __init__(self, connection):
         self.connection = connection

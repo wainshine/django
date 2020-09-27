@@ -229,6 +229,8 @@ class FileField(Field):
 
         self.storage = storage or default_storage
         if callable(self.storage):
+            # Hold a reference to the callable for deconstruct().
+            self._storage_callable = self.storage
             self.storage = self.storage()
             if not isinstance(self.storage, Storage):
                 raise TypeError(
@@ -279,7 +281,7 @@ class FileField(Field):
             del kwargs["max_length"]
         kwargs['upload_to'] = self.upload_to
         if self.storage is not default_storage:
-            kwargs['storage'] = self.storage
+            kwargs['storage'] = getattr(self, '_storage_callable', self.storage)
         return name, path, args, kwargs
 
     def get_internal_type(self):
@@ -298,6 +300,10 @@ class FileField(Field):
             # Commit the file to storage prior to saving the model
             file.save(file.name, file.file, save=False)
         return file
+
+    def contribute_to_class(self, cls, name, **kwargs):
+        super().contribute_to_class(cls, name, **kwargs)
+        setattr(cls, self.attname, self.descriptor_class(self))
 
     def generate_filename(self, instance, filename):
         """

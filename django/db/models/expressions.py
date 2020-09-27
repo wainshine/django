@@ -421,6 +421,7 @@ class Expression(BaseExpression, Combinable):
 
 _connector_combinators = {
     connector: [
+        (fields.IntegerField, fields.IntegerField, fields.IntegerField),
         (fields.IntegerField, fields.DecimalField, fields.DecimalField),
         (fields.DecimalField, fields.IntegerField, fields.DecimalField),
         (fields.IntegerField, fields.FloatField, fields.FloatField),
@@ -1145,11 +1146,9 @@ class Exists(Subquery):
     output_field = fields.BooleanField()
 
     def __init__(self, queryset, negated=False, **kwargs):
-        # As a performance optimization, remove ordering since EXISTS doesn't
-        # care about it, just whether or not a row matches.
-        queryset = queryset.order_by()
         self.negated = negated
         super().__init__(queryset, **kwargs)
+        self.query = self.query.exists()
 
     def __invert__(self):
         clone = self.copy()
@@ -1254,7 +1253,7 @@ class OrderBy(BaseExpression):
         self.descending = True
 
 
-class Window(Expression):
+class Window(SQLiteNumericMixin, Expression):
     template = '%(expression)s OVER (%(window)s)'
     # Although the main expression may either be an aggregate or an
     # expression with an aggregate function, the GROUP BY that will
@@ -1332,6 +1331,16 @@ class Window(Expression):
             'expression': expr_sql,
             'window': ''.join(window_sql).strip()
         }, params
+
+    def as_sqlite(self, compiler, connection):
+        if isinstance(self.output_field, fields.DecimalField):
+            # Casting to numeric must be outside of the window expression.
+            copy = self.copy()
+            source_expressions = copy.get_source_expressions()
+            source_expressions[0].output_field = fields.FloatField()
+            copy.set_source_expressions(source_expressions)
+            return super(Window, copy).as_sqlite(compiler, connection)
+        return self.as_sql(compiler, connection)
 
     def __str__(self):
         return '{} OVER ({}{}{})'.format(

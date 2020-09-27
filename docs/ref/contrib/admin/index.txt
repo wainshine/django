@@ -34,15 +34,15 @@ If you're not using the default project template, here are the requirements:
 
 #. Configure a :class:`~django.template.backends.django.DjangoTemplates`
    backend in your :setting:`TEMPLATES` setting with
-   ``django.contrib.auth.context_processors.auth``,
-   ``django.contrib.messages.context_processors.request``, and
+   ``django.template.context_processors.request``,
+   ``django.contrib.auth.context_processors.auth``, and
    ``django.contrib.messages.context_processors.messages`` in
    the ``'context_processors'`` option of :setting:`OPTIONS
    <TEMPLATES-OPTIONS>`.
 
    .. versionchanged:: 3.1
 
-       ``django.contrib.messages.context_processors.request`` was added as a
+       ``django.template.context_processors.request`` was added as a
        requirement in the ``'context_processors'`` option to support the new
        :attr:`.AdminSite.enable_nav_sidebar`.
 
@@ -116,7 +116,7 @@ Other topics
 The ``register`` decorator
 --------------------------
 
-.. function:: register(*models, site=django.admin.sites.site)
+.. function:: register(*models, site=django.contrib.admin.sites.site)
 
     There is also a decorator for registering your ``ModelAdmin`` classes::
 
@@ -991,6 +991,11 @@ subclass::
 
         The ``FieldListFilter`` API is considered internal and might be
         changed.
+
+      .. note::
+
+        The :class:`~django.contrib.contenttypes.fields.GenericForeignKey`
+        field is not supported.
 
       .. versionadded:: 3.1
 

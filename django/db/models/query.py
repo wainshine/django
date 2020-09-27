@@ -5,8 +5,6 @@ The main QuerySet implementation. This provides the public API for the ORM.
 import copy
 import operator
 import warnings
-from collections import namedtuple
-from functools import lru_cache
 from itertools import chain
 
 import django
@@ -23,7 +21,7 @@ from django.db.models.expressions import Case, Expression, F, Value, When
 from django.db.models.functions import Cast, Trunc
 from django.db.models.query_utils import FilteredRelation, Q
 from django.db.models.sql.constants import CURSOR, GET_ITERATOR_CHUNK_SIZE
-from django.db.models.utils import resolve_callables
+from django.db.models.utils import create_namedtuple_class, resolve_callables
 from django.utils import timezone
 from django.utils.functional import cached_property, partition
 
@@ -148,13 +146,6 @@ class NamedValuesListIterable(ValuesListIterable):
     namedtuple for each row.
     """
 
-    @staticmethod
-    @lru_cache()
-    def create_namedtuple_class(*names):
-        # Cache namedtuple() with @lru_cache() since it's too slow to be
-        # called for every QuerySet evaluation.
-        return namedtuple('Row', names)
-
     def __iter__(self):
         queryset = self.queryset
         if queryset._fields:
@@ -162,7 +153,7 @@ class NamedValuesListIterable(ValuesListIterable):
         else:
             query = queryset.query
             names = [*query.extra_select, *query.values_select, *query.annotation_select]
-        tuple_class = self.create_namedtuple_class(*names)
+        tuple_class = create_namedtuple_class(*names)
         new = tuple.__new__
         for row in super().__iter__():
             yield new(tuple_class, row)
@@ -204,12 +195,14 @@ class QuerySet:
     def query(self):
         if self._deferred_filter:
             negate, args, kwargs = self._deferred_filter
-            self._filter_or_exclude_inplace(negate, *args, **kwargs)
+            self._filter_or_exclude_inplace(negate, args, kwargs)
             self._deferred_filter = None
         return self._query
 
     @query.setter
     def query(self, value):
+        if value.values_select:
+            self._iterable_class = ValuesIterable
         self._query = value
 
     def as_manager(cls):
@@ -573,7 +566,17 @@ class QuerySet:
             return self.get(**kwargs), False
         except self.model.DoesNotExist:
             params = self._extract_model_params(defaults, **kwargs)
-            return self._create_object_from_params(kwargs, params)
+            # Try to create an object using passed params.
+            try:
+                with transaction.atomic(using=self.db):
+                    params = dict(resolve_callables(params))
+                    return self.create(**params), True
+            except IntegrityError:
+                try:
+                    return self.get(**kwargs), False
+                except self.model.DoesNotExist:
+                    pass
+                raise
 
     def update_or_create(self, defaults=None, **kwargs):
         """
@@ -585,42 +588,20 @@ class QuerySet:
         defaults = defaults or {}
         self._for_write = True
         with transaction.atomic(using=self.db):
-            try:
-                obj = self.select_for_update().get(**kwargs)
-            except self.model.DoesNotExist:
-                params = self._extract_model_params(defaults, **kwargs)
-                # Lock the row so that a concurrent update is blocked until
-                # after update_or_create() has performed its save.
-                obj, created = self._create_object_from_params(kwargs, params, lock=True)
-                if created:
-                    return obj, created
+            # Lock the row so that a concurrent update is blocked until
+            # update_or_create() has performed its save.
+            obj, created = self.select_for_update().get_or_create(defaults, **kwargs)
+            if created:
+                return obj, created
             for k, v in resolve_callables(defaults):
                 setattr(obj, k, v)
             obj.save(using=self.db)
         return obj, False
 
-    def _create_object_from_params(self, lookup, params, lock=False):
-        """
-        Try to create an object using passed params. Used by get_or_create()
-        and update_or_create().
-        """
-        try:
-            with transaction.atomic(using=self.db):
-                params = dict(resolve_callables(params))
-                obj = self.create(**params)
-            return obj, True
-        except IntegrityError:
-            try:
-                qs = self.select_for_update() if lock else self
-                return qs.get(**lookup), False
-            except self.model.DoesNotExist:
-                pass
-            raise
-
     def _extract_model_params(self, defaults, **kwargs):
         """
         Prepare `params` for creating a model instance based on the given
-        kwargs; for use by get_or_create() and update_or_create().
+        kwargs; for use by get_or_create().
         """
         defaults = defaults or {}
         params = {k: v for k, v in kwargs.items() if LOOKUP_SEP not in k}
@@ -699,7 +680,8 @@ class QuerySet:
         if (
             field_name != 'pk' and
             not opts.get_field(field_name).unique and
-            field_name not in unique_fields
+            field_name not in unique_fields and
+            not self.query.distinct_fields == (field_name,)
         ):
             raise ValueError("in_bulk()'s field_name must be a unique field but %r isn't." % field_name)
         if id_list is not None:
@@ -939,7 +921,7 @@ class QuerySet:
         set.
         """
         self._not_support_combined_queries('filter')
-        return self._filter_or_exclude(False, *args, **kwargs)
+        return self._filter_or_exclude(False, args, kwargs)
 
     def exclude(self, *args, **kwargs):
         """
@@ -947,9 +929,9 @@ class QuerySet:
         set.
         """
         self._not_support_combined_queries('exclude')
-        return self._filter_or_exclude(True, *args, **kwargs)
+        return self._filter_or_exclude(True, args, kwargs)
 
-    def _filter_or_exclude(self, negate, *args, **kwargs):
+    def _filter_or_exclude(self, negate, args, kwargs):
         if args or kwargs:
             assert not self.query.is_sliced, \
                 "Cannot filter a query once a slice has been taken."
@@ -959,10 +941,10 @@ class QuerySet:
             self._defer_next_filter = False
             clone._deferred_filter = negate, args, kwargs
         else:
-            clone._filter_or_exclude_inplace(negate, *args, **kwargs)
+            clone._filter_or_exclude_inplace(negate, args, kwargs)
         return clone
 
-    def _filter_or_exclude_inplace(self, negate, *args, **kwargs):
+    def _filter_or_exclude_inplace(self, negate, args, kwargs):
         if negate:
             self._query.add_q(~Q(*args, **kwargs))
         else:
@@ -983,7 +965,7 @@ class QuerySet:
             clone.query.add_q(filter_obj)
             return clone
         else:
-            return self._filter_or_exclude(False, **filter_obj)
+            return self._filter_or_exclude(False, args=(), kwargs=filter_obj)
 
     def _combinator_query(self, combinator, *other_qs, all=False):
         # Clone the query to inherit the select list and everything
@@ -1085,6 +1067,16 @@ class QuerySet:
         with extra data or aggregations.
         """
         self._not_support_combined_queries('annotate')
+        return self._annotate(args, kwargs, select=True)
+
+    def alias(self, *args, **kwargs):
+        """
+        Return a query set with added aliases for extra data or aggregations.
+        """
+        self._not_support_combined_queries('alias')
+        return self._annotate(args, kwargs, select=False)
+
+    def _annotate(self, args, kwargs, select=True):
         self._validate_values_are_expressions(args + tuple(kwargs.values()), method_name='annotate')
         annotations = {}
         for arg in args:
@@ -1114,8 +1106,9 @@ class QuerySet:
             if isinstance(annotation, FilteredRelation):
                 clone.query.add_filtered_relation(annotation, alias)
             else:
-                clone.query.add_annotation(annotation, alias, is_summary=False)
-
+                clone.query.add_annotation(
+                    annotation, alias, is_summary=False, select=select,
+                )
         for alias, annotation in clone.query.annotations.items():
             if alias in annotations and annotation.contains_aggregate:
                 if clone._fields is None:
@@ -1222,7 +1215,12 @@ class QuerySet:
             return True
         if self.query.extra_order_by or self.query.order_by:
             return True
-        elif self.query.default_ordering and self.query.get_meta().ordering:
+        elif (
+            self.query.default_ordering and
+            self.query.get_meta().ordering and
+            # A default ordering doesn't affect GROUP BY queries.
+            not self.query.group_by
+        ):
             return True
         else:
             return False

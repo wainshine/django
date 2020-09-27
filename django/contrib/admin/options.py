@@ -808,7 +808,7 @@ class ModelAdmin(BaseModelAdmin):
 
         The default implementation creates an admin LogEntry object.
         """
-        from django.contrib.admin.models import LogEntry, ADDITION
+        from django.contrib.admin.models import ADDITION, LogEntry
         return LogEntry.objects.log_action(
             user_id=request.user.pk,
             content_type_id=get_content_type_for_model(object).pk,
@@ -824,7 +824,7 @@ class ModelAdmin(BaseModelAdmin):
 
         The default implementation creates an admin LogEntry object.
         """
-        from django.contrib.admin.models import LogEntry, CHANGE
+        from django.contrib.admin.models import CHANGE, LogEntry
         return LogEntry.objects.log_action(
             user_id=request.user.pk,
             content_type_id=get_content_type_for_model(object).pk,
@@ -841,7 +841,7 @@ class ModelAdmin(BaseModelAdmin):
 
         The default implementation creates an admin LogEntry object.
         """
-        from django.contrib.admin.models import LogEntry, DELETION
+        from django.contrib.admin.models import DELETION, LogEntry
         return LogEntry.objects.log_action(
             user_id=request.user.pk,
             content_type_id=get_content_type_for_model(object).pk,
@@ -1627,6 +1627,7 @@ class ModelAdmin(BaseModelAdmin):
         context = {
             **self.admin_site.each_context(request),
             'title': title % opts.verbose_name,
+            'subtitle': str(obj) if obj else None,
             'adminform': adminForm,
             'object_id': object_id,
             'original': obj,
@@ -1815,6 +1816,7 @@ class ModelAdmin(BaseModelAdmin):
             'selection_note': _('0 of %(cnt)s selected') % {'cnt': len(cl.result_list)},
             'selection_note_all': selection_note_all % {'total_count': cl.result_count},
             'title': cl.title,
+            'subtitle': None,
             'is_popup': cl.is_popup,
             'to_field': cl.to_field,
             'cl': cl,
@@ -1910,6 +1912,7 @@ class ModelAdmin(BaseModelAdmin):
     def history_view(self, request, object_id, extra_context=None):
         "The 'history' admin view for this model."
         from django.contrib.admin.models import LogEntry
+
         # First check if the user can see this history.
         model = self.model
         obj = self.get_object(request, unquote(object_id))

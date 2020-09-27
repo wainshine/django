@@ -47,7 +47,7 @@ class Queries1Tests(TestCase):
 
         cls.n1 = Note.objects.create(note='n1', misc='foo', id=1)
         cls.n2 = Note.objects.create(note='n2', misc='bar', id=2)
-        cls.n3 = Note.objects.create(note='n3', misc='foo', id=3)
+        cls.n3 = Note.objects.create(note='n3', misc='foo', id=3, negate=False)
 
         ann1 = Annotation.objects.create(name='a1', tag=cls.t1)
         ann1.notes.add(cls.n1)
@@ -1216,6 +1216,13 @@ class Queries1Tests(TestCase):
             [self.a3, self.a4],
         )
 
+    def test_negate_field(self):
+        self.assertSequenceEqual(
+            Note.objects.filter(negate=True),
+            [self.n1, self.n2],
+        )
+        self.assertSequenceEqual(Note.objects.exclude(negate=True), [self.n3])
+
 
 class Queries2Tests(TestCase):
     @classmethod
@@ -2077,6 +2084,16 @@ class QuerysetOrderedTests(unittest.TestCase):
         self.assertIs(qs.ordered, False)
         self.assertIs(qs.order_by('num_notes').ordered, True)
 
+    def test_annotated_default_ordering(self):
+        qs = Tag.objects.annotate(num_notes=Count('pk'))
+        self.assertIs(qs.ordered, False)
+        self.assertIs(qs.order_by('name').ordered, True)
+
+    def test_annotated_values_default_ordering(self):
+        qs = Tag.objects.values('name').annotate(num_notes=Count('pk'))
+        self.assertIs(qs.ordered, False)
+        self.assertIs(qs.order_by('name').ordered, True)
+
 
 @skipUnlessDBFeature('allow_sliced_subqueries_with_in')
 class SubqueryTests(TestCase):
@@ -2390,6 +2407,11 @@ class ValuesQuerysetTests(TestCase):
         qs = Number.objects.annotate(combinedexpression1=expr).values_list(expr, 'combinedexpression1', named=True)
         values = qs.first()
         self.assertEqual(values._fields, ('combinedexpression2', 'combinedexpression1'))
+
+    def test_named_values_pickle(self):
+        value = Number.objects.values_list('num', 'other_num', named=True).get()
+        self.assertEqual(value, (72, None))
+        self.assertEqual(pickle.loads(pickle.dumps(value)), value)
 
 
 class QuerySetSupportsPythonIdioms(TestCase):

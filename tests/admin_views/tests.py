@@ -100,10 +100,16 @@ class AdminViewBasicTestCase(TestCase):
         cls.superuser = User.objects.create_superuser(username='super', password='secret', email='super@example.com')
         cls.s1 = Section.objects.create(name='Test section')
         cls.a1 = Article.objects.create(
-            content='<p>Middle content</p>', date=datetime.datetime(2008, 3, 18, 11, 54, 58), section=cls.s1
+            content='<p>Middle content</p>',
+            date=datetime.datetime(2008, 3, 18, 11, 54, 58),
+            section=cls.s1,
+            title='Article 1',
         )
         cls.a2 = Article.objects.create(
-            content='<p>Oldest content</p>', date=datetime.datetime(2000, 3, 18, 11, 54, 58), section=cls.s1
+            content='<p>Oldest content</p>',
+            date=datetime.datetime(2000, 3, 18, 11, 54, 58),
+            section=cls.s1,
+            title='Article 2',
         )
         cls.a3 = Article.objects.create(
             content='<p>Newest content</p>', date=datetime.datetime(2009, 3, 18, 11, 54, 58), section=cls.s1
@@ -1027,6 +1033,62 @@ class AdminViewBasicTest(AdminViewBasicTestCase):
         self.assertContains(response, '<th scope="col" class="column-value">')
         self.assertNotContains(response, '<th scope="col" class="sortable column')
 
+    def test_app_index_context(self):
+        response = self.client.get(reverse('admin:app_list', args=('admin_views',)))
+        self.assertContains(
+            response,
+            '<title>Admin_Views administration | Django site admin</title>',
+        )
+        self.assertEqual(response.context['title'], 'Admin_Views administration')
+        self.assertEqual(response.context['app_label'], 'admin_views')
+
+    def test_change_view_subtitle_per_object(self):
+        response = self.client.get(
+            reverse('admin:admin_views_article_change', args=(self.a1.pk,)),
+        )
+        self.assertContains(
+            response,
+            '<title>Article 1 | Change article | Django site admin</title>',
+        )
+        self.assertContains(response, '<h1>Change article</h1>')
+        self.assertContains(response, '<h2>Article 1</h2>')
+        response = self.client.get(
+            reverse('admin:admin_views_article_change', args=(self.a2.pk,)),
+        )
+        self.assertContains(
+            response,
+            '<title>Article 2 | Change article | Django site admin</title>',
+        )
+        self.assertContains(response, '<h1>Change article</h1>')
+        self.assertContains(response, '<h2>Article 2</h2>')
+
+    def test_view_subtitle_per_object(self):
+        viewuser = User.objects.create_user(
+            username='viewuser', password='secret', is_staff=True,
+        )
+        viewuser.user_permissions.add(
+            get_perm(Article, get_permission_codename('view', Article._meta)),
+        )
+        self.client.force_login(viewuser)
+        response = self.client.get(
+            reverse('admin:admin_views_article_change', args=(self.a1.pk,)),
+        )
+        self.assertContains(
+            response,
+            '<title>Article 1 | View article | Django site admin</title>',
+        )
+        self.assertContains(response, '<h1>View article</h1>')
+        self.assertContains(response, '<h2>Article 1</h2>')
+        response = self.client.get(
+            reverse('admin:admin_views_article_change', args=(self.a2.pk,)),
+        )
+        self.assertContains(
+            response,
+            '<title>Article 2 | View article | Django site admin</title>',
+        )
+        self.assertContains(response, '<h1>View article</h1>')
+        self.assertContains(response, '<h2>Article 2</h2>')
+
 
 @override_settings(TEMPLATES=[{
     'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -1726,6 +1788,8 @@ class AdminViewPermissionsTest(TestCase):
         # Now give the user permission to add but not change.
         self.viewuser.user_permissions.add(get_perm(Article, get_permission_codename('add', Article._meta)))
         response = self.client.get(reverse('admin:admin_views_article_add'))
+        self.assertEqual(response.context['title'], 'Add article')
+        self.assertContains(response, '<title>Add article | Django site admin</title>')
         self.assertContains(response, '<input type="submit" value="Save and view" name="_continue">')
         post = self.client.post(reverse('admin:admin_views_article_add'), add_dict, follow=False)
         self.assertEqual(post.status_code, 302)
@@ -1824,11 +1888,16 @@ class AdminViewPermissionsTest(TestCase):
         # view user can view articles but not make changes.
         self.client.force_login(self.viewuser)
         response = self.client.get(article_changelist_url)
-        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['title'], 'Select article to view')
+        self.assertContains(
+            response,
+            '<title>Select article to view | Django site admin</title>',
+        )
+        self.assertContains(response, '<h1>Select article to view</h1>')
         response = self.client.get(article_change_url)
-        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['title'], 'View article')
+        self.assertContains(response, '<title>View article | Django site admin</title>')
+        self.assertContains(response, '<h1>View article</h1>')
         self.assertContains(response, '<label>Extra form field:</label>')
         self.assertContains(response, '<a href="/test_admin/admin/admin_views/article/" class="closelink">Close</a>')
         post = self.client.post(article_change_url, change_dict)
@@ -1839,11 +1908,19 @@ class AdminViewPermissionsTest(TestCase):
         # change user can view all items and edit them
         self.client.force_login(self.changeuser)
         response = self.client.get(article_changelist_url)
-        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['title'], 'Select article to change')
+        self.assertContains(
+            response,
+            '<title>Select article to change | Django site admin</title>',
+        )
+        self.assertContains(response, '<h1>Select article to change</h1>')
         response = self.client.get(article_change_url)
-        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['title'], 'Change article')
+        self.assertContains(
+            response,
+            '<title>Change article | Django site admin</title>',
+        )
+        self.assertContains(response, '<h1>Change article</h1>')
         post = self.client.post(article_change_url, change_dict)
         self.assertRedirects(post, article_changelist_url)
         self.assertEqual(Article.objects.get(pk=self.a1.pk).content, '<p>edited article</p>')
@@ -1923,8 +2000,9 @@ class AdminViewPermissionsTest(TestCase):
         change_url = reverse('admin9:admin_views_article_change', args=(self.a1.pk,))
         self.client.force_login(self.viewuser)
         response = self.client.get(change_url)
-        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['title'], 'View article')
+        self.assertContains(response, '<title>View article | Django site admin</title>')
+        self.assertContains(response, '<h1>View article</h1>')
         self.assertContains(response, '<a href="/test_admin/admin9/admin_views/article/" class="closelink">Close</a>')
 
     def test_change_view_save_as_new(self):
@@ -2895,7 +2973,7 @@ class AdminViewStringPrimaryKeyTest(TestCase):
         )
 
         self.assertEqual(response.status_code, 302)  # temporary redirect
-        self.assertIn('/123_2Fhistory/', response['location'])  # PK is quoted
+        self.assertIn('/123_2Fhistory/', response.headers['location'])  # PK is quoted
 
 
 @override_settings(ROOT_URLCONF='admin_views.urls')
@@ -3292,7 +3370,7 @@ class AdminViewListEditable(TestCase):
         self.assertContains(response, 'Unordered object #3')
         self.assertContains(response, 'Unordered object #2')
         self.assertNotContains(response, 'Unordered object #1')
-        response = self.client.get(reverse('admin:admin_views_unorderedobject_changelist') + '?p=1')
+        response = self.client.get(reverse('admin:admin_views_unorderedobject_changelist') + '?p=2')
         self.assertNotContains(response, 'Unordered object #3')
         self.assertNotContains(response, 'Unordered object #2')
         self.assertContains(response, 'Unordered object #1')
@@ -4739,6 +4817,9 @@ class SeleniumTests(AdminSeleniumTestCase):
         name_input.send_keys('<i>edited section</i>')
         self.selenium.find_element_by_xpath('//input[@value="Save"]').click()
         self.selenium.switch_to.window(self.selenium.window_handles[0])
+        # Hide sidebar.
+        toggle_button = self.selenium.find_element_by_css_selector('#toggle-nav-sidebar')
+        toggle_button.click()
         select = Select(self.selenium.find_element_by_id('id_form-0-section'))
         self.assertEqual(select.first_selected_option.text, '<i>edited section</i>')
         # Rendered select2 input.
